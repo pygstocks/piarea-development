@@ -1,0 +1,113 @@
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="color-scheme" content="dark"/>
+<meta name="piarea-development" content="https://piarea-development.pygstocks.workers.dev"/>
+<title>PIAREA-Home</title>
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans:wght@500;700&display=swap");
+:root{--bg:#000;--fg:#fff;--line:#333;--gap:8px;--radius:8px;--muted:#aaa;--up:#ff6b6b;--dn:#6b6bff}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;width:100%;min-height:100svh;background:var(--bg);color:var(--fg);font-family:"Noto Sans",system-ui,sans-serif;color-scheme:dark;overflow-x:hidden}
+.fullbleed{width:100vw;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw)}
+.page{max-width:450px;margin:0 auto;padding:0 16px}
+.wrap,.stack{display:flex;flex-direction:column;gap:var(--gap)}
+.twins{display:flex;gap:var(--gap)}
+.twins .btn{flex:1}
+.hidden{display:none!important}
+label{display:block;margin:0 0 4px;font-size:14px;font-weight:700}
+.btn,.input,select{width:100%;padding:16px 12px;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);appearance:none;outline:none;transition:box-shadow .12s}
+.btn{font-weight:700;cursor:pointer;text-align:center}
+.input:focus,select:focus,.btn:focus{box-shadow:0 0 0 1px var(--fg)}
+.btn:active{background:#fff;color:#000;border-color:var(--line)}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+<div class="fullbleed">
+  <div class="page">
+    <main class="wrap">
+      <section class="stack">
+        <button class="btn" id="btnAsset">내 자산 조회하기</button>
+        <button class="btn" id="btnSignup">PIAREA 가입하기</button>
+        <button class="btn" id="btnExchange">PIAREA 구독하기</button>
+        <form id="exForm" class="stack hidden" autocomplete="off" novalidate>
+          <input id="exId" class="input" placeholder="ID를 입력하세요!!" autocapitalize="none" autocomplete="username"/>
+          <input id="exPassword" class="input" type="password" minlength="6" maxlength="64" autocomplete="current-password" placeholder="비밀번호를 입력하세요!!"/>
+        </form>
+        <div class="twins">
+          <a class="btn" href="https://chzzk.naver.com/53ec3d629fa1dcb6b1169c145c220c31" target="_blank" rel="noopener noreferrer">CHZZK</a>
+          <a class="btn" href="https://www.instagram.com/pygstocks/" target="_blank" rel="noopener noreferrer">Instagram</a>
+        </div>
+        <div class="twins">
+          <a class="btn" href="https://pf.kakao.com/_AIAtn" target="_blank" rel="noopener noreferrer" aria-label="KakaoTalk">KakaoTalk</a>
+          <a class="btn" href="https://www.youtube.com/@pygstocks" target="_blank" rel="noopener noreferrer">YouTube</a>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+<script>
+(()=>{"use strict";
+const API=(document.querySelector('meta[name="piarea-development"]')?.content||"").trim()||"";
+const ok=m=>{const s=String(m||"요청이 완료됐어요!!");alert(s.endsWith("!!")?s:s+"!!")};
+const err=m=>{const s=String(m||"오류가 발생했어요...");alert(s.endsWith("...")?s:s+"...")};
+const idem=()=>crypto?.randomUUID?.()||(Math.random().toString(36).slice(2)+Date.now());
+async function fjson(u,o){
+  const r=await fetch(u,o).catch(()=>null);
+  const tx=await r?.text().catch(()=>"\u200b");
+  let j={};try{j=tx?JSON.parse(tx):{}}catch{}
+  if(!r?.ok||j?.ok===false){
+    const m=j?.message||j?.msg||j?.detail||j?.error||j?.reason||"요청 처리에 실패했어요...";
+    const e=new Error(String(m).replace(/\s*\(HTTP.*\)\s*$/,"").replace(/(?:\.\.\.)?$/,"..."));
+    e.status=r?.status;e.response=j;e.code=j?.code;throw e;
+  }
+  return j;
+}
+async function postJSON(p,b){
+  const u=p.startsWith("http")?p:`${API}/${String(p||"").replace(/^\/+/,"")}`;
+  return fjson(u,{
+    method:"POST",
+    credentials:"include",
+    headers:{
+      "Content-Type":"application/json",
+      Accept:"application/json",
+      "Idempotency-Key":idem()
+    },
+    body:JSON.stringify(b||{})
+  });
+}
+const $=id=>document.getElementById(id);
+const btnA=$("btnAsset"),btnS=$("btnSignup"),btnX=$("btnExchange");
+const form=$("exForm"),idEl=$("exId"),pwEl=$("exPassword");
+function dots(el,base,d=1e3,s=300){
+  let to=null,iv=null,p=0,orig=el.textContent||"";
+  to=setTimeout(()=>{el.textContent=base;iv=setInterval(()=>{p=(p+1)%4;el.textContent=base+["",".","..","..."][p]},s)},d);
+  return()=>{clearTimeout(to);clearInterval(iv);el.textContent=orig};
+}
+const hasSp=s=>/[^A-Za-z0-9]/.test(s||"");
+btnA.onclick=()=>location.href="https://pygstocks.com/asset";
+btnS.onclick=()=>location.href="https://pygstocks.com/signup";
+btnX.onclick=async()=>{
+  if(form.classList.contains("hidden")){
+    form.classList.remove("hidden");
+    idEl.focus();
+    return;
+  }
+  const id=idEl.value.trim().replace(/^@/,"");
+  const pw=pwEl.value;
+  if(!id){ok("ID를 입력하세요!!");idEl.focus();return}
+  if(!(pw.trim().length>=6&&hasSp(pw))){ok("특수문자 1개 이상 포함 6자 이상 입력하세요!!");pwEl.focus();return}
+  btnX.disabled=true;
+  const stop=dots(btnX,"PIAREA 구독하기 진행 중");
+  try{
+    await postJSON("v1/rewards",{id,password:pw,amountKrw:10000,kind:"subscription"});
+    ok("PIAREA 구독이 완료되었어요!!");
+    form.reset();
+    form.classList.add("hidden");
+  }catch(e){
+    err(e?.message||"구독 처리 중 오류가 발생했어요...");
+  }finally{
+    stop();
+    btnX.disabled=false;
+  }
+};
+})();
+</script>

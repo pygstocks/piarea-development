@@ -1,0 +1,11 @@
+name: PiareaMinecraft
+version: 'Ver 25.12'
+main: com.pygstocks.piareaMinecraft.PiareaMinecraft
+api-version: '1.21'
+load: POSTWORLD
+authors: [ 'pygstocks' ]
+description: This is the official PIAREA Minecraft plugin.
+commands:
+  piarea:
+    aliases: [ 'pairea' ]
+    usage: "/piarea signup | signin | gui  | w"
