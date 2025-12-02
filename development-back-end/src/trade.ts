@@ -1964,7 +1964,7 @@ export function registerTradeRoutes(app: Hono<{ Bindings: AppEnv }>) {
       return ok(
         c,
         { cash_pia: Number(up?.cash_pia ?? 0), amount_krw: amount },
-        "리워드가 지급됐어요!!",
+        "보상이 지급됐어요!!",
       );
     } catch (e: any) {
       const s = (e as any)?.status || 500;
