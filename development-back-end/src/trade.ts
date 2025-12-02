@@ -1885,7 +1885,7 @@ export function registerTradeRoutes(app: Hono<{ Bindings: AppEnv }>) {
       try {
         await db.execute(sql`
           INSERT INTO users(user_id,id,password_salt,password_params,password_hash,cash_pia,pnl_buffer)
-          VALUES(${userId},${dto.id},${saltB64},${params},${hashB64},0,0)
+          VALUES(${userId},${dto.id},${saltB64},${params},${hashB64},1000,0)
         `);
       } catch (e: any) {
         const msg = String(e?.message || "");
@@ -1923,7 +1923,10 @@ export function registerTradeRoutes(app: Hono<{ Bindings: AppEnv }>) {
         note: raw.note ? String(raw.note).trim() || undefined : undefined,
         kind: raw.kind ? String(raw.kind).trim() || undefined : undefined,
       });
-      const amount = krwInt(dto.amountKrw);
+      const amount = Number(dto.amountKrw);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return err(c, ERR.bad_request, "보상 금액이 올바르지 않아요...", 400);
+      }
       if (!(amount > 0)) {
         return err(c, ERR.bad_request, "보상 금액이 올바르지 않아요...", 400);
       }
@@ -1981,29 +1984,75 @@ export function registerTradeRoutes(app: Hono<{ Bindings: AppEnv }>) {
       const db = getDbNow(c.env);
       const rows: any[] = (
         await db.execute(sql`
-          SELECT id,cash_pia,pnl_buffer FROM users
+          SELECT user_id,id,cash_pia,pnl_buffer FROM users
         `)
       ).rows || [];
-      const enriched = rows.map(r => {
+      const enriched: any[] = [];
+      for (const r of rows) {
         const cash = +Number(r.cash_pia || 0).toFixed(2);
-        const pnl = krwInt(Number(r.pnl_buffer || 0));
-        const base = Math.max(1, cash - pnl);
-        const profitRate = base > 0 ? +((pnl / base) * 100).toFixed(2) : 0;
-        return {
+        const pnlRealized = krwInt(Number(r.pnl_buffer || 0));
+        let holdingsValue = 0;
+        let unrealizedPnl = 0;
+        const hq = await db.execute(sql`
+          SELECT
+            a.id AS asset_id,
+            a.symbol AS symbol,
+            SUM(
+              CASE WHEN o.side='buy'
+                THEN CAST(o.qty AS REAL)
+                ELSE-CAST(o.qty AS REAL)
+              END
+            )AS units
+          FROM orders o
+          JOIN assets a ON a.id=o.asset_id
+          WHERE o.user_id=${r.user_id}
+          GROUP BY a.id,a.symbol
+          HAVING SUM(
+            CASE WHEN o.side='buy'
+              THEN CAST(o.qty AS REAL)
+              ELSE-CAST(o.qty AS REAL)
+            END
+          )>0
+        `);
+        for (const hr of (hq.rows || []) as any[]) {
+          const symbol = String(hr.symbol || "").toUpperCase();
+          const units = +Number(hr.units || 0).toFixed(8);
+          if (!(units > 0)) continue;
+          const unitPrice = await getUnitPriceKRWBySymbol(c.env, symbol);
+          if (!Number.isFinite(unitPrice as number)) continue;
+          const curVal = krwInt(units * (unitPrice as number));
+          holdingsValue += curVal;
+          const avg = await avgBuyCostKRW(db, r.user_id, hr.asset_id);
+          if (avg != null) {
+            const invest = krwInt(units * avg);
+            unrealizedPnl += krwInt(curVal - invest);
+          }
+        }
+        const totalEquity = cash + holdingsValue;
+        const totalPnl = pnlRealized + unrealizedPnl;
+        const base = Math.max(1, totalEquity - totalPnl);
+        const profitRate =
+          base > 0 ? +((totalPnl / base) * 100).toFixed(2) : 0;
+        enriched.push({
           id: String(r.id || ""),
           cash_pia: cash,
-          pnl_buffer: pnl,
+          pnl_buffer: pnlRealized,
+          holdingsValue,
+          totalEquity,
+          totalPnl,
           profitRate,
-        };
-      });
+        });
+      }
       const byHolding = [...enriched]
-        .sort((a, b) => b.cash_pia - a.cash_pia)
+        .sort((a, b) => (b.totalEquity ?? b.cash_pia) - (a.totalEquity ?? a.cash_pia))
         .slice(0, limit)
         .map((u, idx) => ({ rank: idx + 1, ...u }));
+
       const byProfit = [...enriched]
         .sort((a, b) => b.profitRate - a.profitRate)
         .slice(0, limit)
         .map((u, idx) => ({ rank: idx + 1, ...u }));
+
       return ok(
         c,
         { topByHolding: byHolding, topByProfitRate: byProfit },

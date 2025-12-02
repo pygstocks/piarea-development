@@ -442,31 +442,33 @@ btnCheck.onclick=async()=>{
   try{
     const s=await postJSON("v1/portfolio/summary",{id,password:pw});
     showSummary(s?.data||s);
-    if(rankEl){
-      rankEl.textContent="-";
-      rankEl.className="";
-      try{
-        const ranks=await getJSON("v1/ranks").catch(()=>null);
-        if(ranks&&ranks.data){
-          const meId=id;
-          const list=Array.isArray(ranks.data.byReturn)?ranks.data.byReturn:[];
-          const total=list.length;
-          const me=list.find(x=>String(x.id)===String(meId));
-          if(me){
+    if (rankEl) {
+      rankEl.textContent = "-";
+      rankEl.className = "";
+      try {
+        const ranks = await getJSON("v1/users/rankings").catch(() => null);
+        if (ranks && ranks.data) {
+          const meId = id;
+          const list = Array.isArray(ranks.data.topByProfitRate)
+          ? ranks.data.topByProfitRate
+          : [];
+          const total = list.length;
+          const me = list.find(x => String(x.id) === String(meId));
+          if (me) {
             showRank({
-              data:{
-                rank:Number(me.rank),
-                totalUsers:total,
-                return_rate:Number(me.return_rate)
+              data: {
+                rank: Number(me.rank),
+                totalUsers: total,
+                return_rate_pct: Number(me.profitRate)
               }
             });
           }
         }
-      }catch{}
+      } catch {}
     }
     const h=await postJSON("v1/assets/holdings",{id,password:pw,includePrices:true}).catch(()=>({}));
     renderHoldings(h?.data?.items||h?.items||[]);
-    ok("자산 조회이 완료되었어요!!");
+    ok("자산 조회가 완료되었어요!!");
   }catch(e){
     err(e?.message||"요청 처리 중 오류가 발생했어요...");
   }finally{

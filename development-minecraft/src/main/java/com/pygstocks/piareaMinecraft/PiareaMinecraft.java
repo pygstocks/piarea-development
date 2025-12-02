@@ -312,7 +312,7 @@ public class PiareaMinecraft extends JavaPlugin implements Listener {
                     .put("amount_pia", normalized)
                     .put("amountKrw", normalized)
                     .put("amount_krw", normalized);
-            JsonNode res = postJson("/v1/reward", body, true);
+            JsonNode res = postJson("/v1/rewards", body, true);
             boolean ok = res.path("ok").asBoolean(false);
             if (!ok) {
                 getLogger().warning("[PIAREA] 보상 지급에 실패했습니다... delta=" + normalized +

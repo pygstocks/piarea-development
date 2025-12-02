@@ -1,6 +1,6 @@
 name = "piarea-development"
 main = "src/server.ts"
-compatibility_date = "2025-11-29"
+compatibility_date = "2025-12-01"
 compatibility_flags = ["nodejs_compat"]
 [triggers]
 crons = ["* * * * *"]
