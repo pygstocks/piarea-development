@@ -1,0 +1,4 @@
+piarea:
+  baseUrl: "https://piarea-development.pygstocks.workers.dev"
+  actionbarIntervalSec: 2
+  spawnRadius: 100

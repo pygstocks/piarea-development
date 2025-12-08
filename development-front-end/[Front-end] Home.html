@@ -1,0 +1,47 @@
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="color-scheme" content="dark"/>
+<meta name="piarea-development" content="https://piarea-development.pygstocks.workers.dev"/>
+<title>PIAREA-Home</title>
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans:wght@500;700&display=swap");
+:root{--bg:#000;--fg:#fff;--line:#333;--gap:8px;--radius:8px;--muted:#aaa;--up:#ff6b6b;--dn:#6b6bff;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;width:100%;min-height:100svh;background:var(--bg);color:var(--fg);font-family:"Noto Sans",system-ui,sans-serif;color-scheme:dark;overflow-x:hidden;}
+.fullbleed{width:100vw;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw);}
+.page{max-width:450px;margin:0 auto;padding:0 16px;}
+.wrap,.stack{display:flex;flex-direction:column;gap:var(--gap);}
+.twins{display:flex;gap:var(--gap);}
+.twins .btn{flex:1;}
+label{display:block;margin:0 0 4px;font-size:14px;font-weight:700;}
+.btn,.input,select{width:100%;padding:16px 12px;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);appearance:none;outline:none;transition:box-shadow .12s,background-color .12s,color .12s;}
+.btn{font-weight:700;cursor:pointer;text-align:center;}
+.input:focus,select:focus,.btn:focus{box-shadow:0 0 0 1px var(--fg);}
+.btn:active{background:#fff;color:#000;border-color:var(--line);}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
+</style>
+<div class="fullbleed">
+  <div class="page">
+    <main class="wrap">
+      <section class="stack">
+        <button class="btn" id="btnAsset">내 자산 조회하기</button>
+        <button class="btn" id="btnSignup">PIAREA 가입하기</button>
+        <div class="twins">
+          <a class="btn" href="https://chzzk.naver.com/53ec3d629fa1dcb6b1169c145c220c31" target="_blank" rel="noopener noreferrer">CHZZK</a>
+          <a class="btn" href="https://www.instagram.com/pygstocks/" target="_blank" rel="noopener noreferrer">Instagram</a>
+        </div>
+        <div class="twins">
+          <a class="btn" href="https://pf.kakao.com/_AIAtn" target="_blank" rel="noopener noreferrer" aria-label="KakaoTalk">KakaoTalk</a>
+          <a class="btn" href="https://www.youtube.com/@pygstocks" target="_blank" rel="noopener noreferrer">YouTube</a>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+<script>
+(()=>{"use strict";
+const $=id=>document.getElementById(id);
+$("btnAsset")?.addEventListener("click",()=>{location.href="https://pygstocks.com/asset";});
+$("btnSignup")?.addEventListener("click",()=>{location.href="https://pygstocks.com/signup";});
+})();
+</script>

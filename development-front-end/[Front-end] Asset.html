@@ -1,0 +1,599 @@
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="color-scheme" content="dark"/>
+<meta name="piarea-development" content="https://piarea-development.pygstocks.workers.dev"/>
+<title>PIAREA-Asset</title>
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans:wght@500;700&display=swap");
+:root{--bg:#000;--fg:#fff;--line:#333;--gap:8px;--radius:8px;--muted:#aaa;--up:#ff6b6b;--dn:#6b6bff;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;width:100%;min-height:100svh;background:var(--bg);color:var(--fg);font-family:"Noto Sans",system-ui,sans-serif;color-scheme:dark;overflow-x:hidden;}
+.fullbleed{width:100vw;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw);}
+.page{max-width:450px;margin:0 auto;padding:0 16px;}
+.wrap,.stack{display:flex;flex-direction:column;gap:var(--gap);}
+.hidden{display:none!important;}
+label{display:block;margin:0 0 4px;font-size:14px;font-weight:700;}
+.btn,.input,select{width:100%;padding:16px 12px;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);appearance:none;outline:none;transition:box-shadow .12s,background-color .12s,color .12s;}
+.btn{font-weight:700;cursor:pointer;text-align:center;}
+.input:focus,select:focus,.btn:focus{box-shadow:0 0 0 1px var(--fg);}
+.btn:active{background:#fff;color:#000;border-color:var(--line);}
+.balances{display:flex;justify-content:space-between;align-items:center;font-size:14px;color:var(--muted);}
+.balances b{color:var(--fg);font-weight:700;}
+#balBox{margin-bottom:0;padding-bottom:8px;border-bottom:1px solid var(--line);}
+.no-border{border-bottom:none!important;}
+.list{display:flex;flex-direction:column;padding:0;border-top:none;}
+.list.has-items{border-top:1px solid var(--line);}
+.hold{padding:8px 0;display:flex;flex-direction:column;gap:4px;border-bottom:1px solid var(--line);}
+.hold:last-child{border-bottom:none;}
+.pnl-up{color:var(--up);}
+.pnl-dn{color:var(--dn);}
+.pnl-zero{color:var(--muted);}
+.chartbox{width:100%;height:260px;border:1px solid var(--line);border-radius:var(--radius);padding:8px;}
+.chartbox>canvas{width:100%!important;height:100%!important;display:block;}
+.suggest{margin-top:4px;border:1px solid var(--line);border-radius:var(--radius);max-height:180px;overflow:auto;font-size:14px;background:var(--bg);}
+.suggest button{width:100%;padding:16px 12px;text-align:left;background:none;border:0;color:var(--fg);cursor:pointer;border-bottom:1px solid #222;font-family:inherit;font-size:16px;}
+.suggest button:last-child{border-bottom:none;}
+.suggest button:hover,.suggest button:focus{background:#333;}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
+</style>
+<div class="fullbleed">
+  <div class="page">
+    <main class="wrap">
+      <section class="stack">
+        <h1 class="hidden">내 자산 조회하기</h1>
+        <input id="id" class="input" placeholder="ID를 입력하세요!!" autocapitalize="none" autocomplete="username"/>
+        <input id="pw" class="input" type="password" minlength="6" maxlength="64" autocomplete="current-password" placeholder="비밀번호를 입력하세요!!"/>
+        <button id="btnCheck" class="btn">내 자산 조회하기</button>
+        <div id="balBox" class="balances hidden">
+          <span>현금(KRW): <b id="cash">-</b></span>
+          <span>순위(수익률): <b id="rank">-</b></span>
+        </div>
+        <div id="sumBox" class="summary hidden">
+          <div class="balances">
+            <span>총 매입금액: <b id="sumInv">-</b></span>
+            <span>총 평가손익: <b id="sumPnl">-</b></span>
+          </div>
+          <div class="balances">
+            <span>총 평가금액: <b id="sumEval">-</b></span>
+            <span>총 수익률: <b id="sumRate">-</b></span>
+          </div>
+        </div>
+        <div id="holdBox" class="list hidden"></div>
+        <section id="chartsWrap" class="stack">
+          <button id="unitBtn" class="btn" type="button">-</button>
+          <input id="assetSearch" class="input" autocomplete="off" autocapitalize="none" placeholder="지수/지표 이름 또는 심볼을 입력하세요!!"/>
+          <div id="assetList" class="suggest hidden"></div>
+          <select id="typeSel" class="input">
+            <option value="m1">분봉(1분)</option>
+            <option value="h1">시간봉(1시간)</option>
+            <option value="day" selected>일봉(1일)</option>
+            <option value="mon">월봉(1개월)</option>
+            <option value="year">연봉(1년)</option>
+          </select>
+          <section class="chartbox">
+            <canvas id="cv"></canvas>
+          </section>
+        </section>
+      </section>
+    </main>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+(()=>{"use strict";
+const API=(document.querySelector('meta[name="piarea-development"]')?.content||"").trim()||"";
+const ok=m=>{const s=String(m||"요청이 완료됐어요!!");alert(s.endsWith("!!")?s:`${s}!!`);};
+const err=m=>{const s=String(m||"오류가 발생했어요...");alert(s.endsWith("...")?s:`${s}...`);};
+const idem=()=>crypto?.randomUUID?.()||(Math.random().toString(36).slice(2)+Date.now());
+async function fjson(u,o){
+  const r=await fetch(u,o).catch(()=>null);
+  const tx=await r?.text().catch(()=>"\u200b");
+  let j={};
+  try{j=tx?JSON.parse(tx):{};}catch{}
+  if(!r?.ok||j?.ok===false){
+    const m=j?.message||j?.msg||j?.detail||j?.error||j?.reason||"요청 처리에 실패했어요...";
+    const e=new Error(String(m).replace(/\s*\(HTTP.*\)\s*$/,"").replace(/(?:\.\.\.)?$/,"..."));
+    e.status=r?.status;
+    e.response=j;
+    throw e;
+  }
+  return j;
+}
+async function getJSON(p){
+  const u=p.startsWith("http")?p:`${API}/${String(p||"").replace(/^\/+/,"")}`;
+  return fjson(u,{credentials:"include",headers:{Accept:"application/json"}});
+}
+async function postJSON(p,b){
+  const u=p.startsWith("http")?p:`${API}/${String(p||"").replace(/^\/+/,"")}`;
+  return fjson(u,{
+    method:"POST",
+    credentials:"include",
+    headers:{"Content-Type":"application/json",Accept:"application/json","Idempotency-Key":idem()},
+    body:JSON.stringify(b||{})
+  });
+}
+const $=id=>document.getElementById(id);
+const idEl=$("id");
+const pwEl=$("pw");
+const btnCheck=$("btnCheck");
+const balBox=$("balBox");
+const cashEl=$("cash");
+const rankEl=$("rank");
+const holdBox=$("holdBox");
+const sumBox=$("sumBox");
+const sumInv=$("sumInv");
+const sumPnl=$("sumPnl");
+const sumEval=$("sumEval");
+const sumRate=$("sumRate");
+const unitBtn=$("unitBtn");
+const assetSearch=$("assetSearch");
+const assetList=$("assetList");
+const typeSel=$("typeSel");
+const cv=$("cv");
+const chartsWrap=$("chartsWrap");
+const KRW2=new Intl.NumberFormat("ko-KR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const DEC2={minimumFractionDigits:2,maximumFractionDigits:2};
+const UP="#ff6b6b";
+const DN="#6b6bff";
+const EQ="#333";
+const TF={
+  m1:{range:"1d",interval:"1m"},
+  h1:{range:"5d",interval:"15m"},
+  day:{range:"1mo",interval:"1d"},
+  mon:{range:"6mo",interval:"1wk"},
+  year:{range:"5y",interval:"1mo"}
+};
+function dots(el,base,d=1e3,s=300){
+  let to=null,iv=null,i=0;
+  const orig=el?.textContent||"";
+  to=setTimeout(()=>{
+    el.textContent=base;
+    iv=setInterval(()=>{
+      i=(i+1)%4;
+      el.textContent=base+["",".","..","..."][i];
+    },s);
+  },d);
+  return()=>{
+    clearTimeout(to);
+    clearInterval(iv);
+    el.textContent=orig;
+  };
+}
+function showSummary(o){
+  balBox.classList.remove("hidden");
+  const c=o?.cash_pia;
+  cashEl.textContent=Number.isFinite(+c)?KRW2.format(+c):"-";
+}
+function showRank(o){
+  if(!rankEl)return;
+  const d=o?.data||o||{};
+  let rankText="-";
+  let rankClass="";
+  const r=Number(d.rank??d.userRank??d.position);
+  const total=Number(d.total??d.totalUsers??d.userCount);
+  const rate=Number(
+    d.returnRatePct??d.return_rate_pct??
+    d.returnRate??d.return_rate??
+    d.pnlRatePct??d.pnl_rate_pct??
+    d.yieldPct??d.yield_pct
+  );
+  if(Number.isFinite(r)&&r>0&&Number.isFinite(total)&&total>0)rankText=`${r}위`;
+  if(Number.isFinite(rate)){
+    const sign=rate>0?"+":rate<0?"-":"";
+    const rateStr=`${sign}${Math.abs(rate).toFixed(2)}%`;
+    rankText=rankText!=="-"?`${rankText} (${rateStr})`:rateStr;
+    if(rate>0)rankClass="pnl-up";
+    else if(rate<0)rankClass="pnl-dn";
+    else rankClass="pnl-zero";
+  }
+  rankEl.textContent=rankText;
+  rankEl.className=rankClass;
+}
+function renderTotals(arr){
+  const base=Array.isArray(arr)?arr:[];
+  const owned=base.filter(x=>{
+    const qty=Number(x?.qty??x?.units??0);
+    return Number.isFinite(qty)&&qty>0;
+  });
+  if(!owned.length){
+    sumBox.classList.add("hidden");
+    sumInv.textContent="-";
+    sumPnl.textContent="-";
+    sumEval.textContent="-";
+    sumRate.textContent="-";
+    return;
+  }
+  let totalInv=0,totalPnl=0,totalEval=0;
+  owned.forEach(x=>{
+    const qty=Number(x.qty??x.units??0);
+    const value=Number(x.valueKrw??x.value_krw??x.marketValueKrw??x.market_value_krw??0)||0;
+    const avg=Number(
+      x.avgPricePerUnitKrw??x.avg_price_per_unit_krw??
+      x.avgBuyPriceKrw??x.avg_buy_price_krw??
+      (qty?value/qty:0)
+    )||0;
+    const invest=Number(x.investKrw??x.invest_krw??(qty&&avg?qty*avg:0))||0;
+    const pnl=Number(x.pnlKrw??x.pnl_krw??(value-invest))||0;
+    totalInv+=invest;
+    totalPnl+=pnl;
+    totalEval+=value;
+  });
+  sumBox.classList.remove("hidden");
+  sumInv.textContent=KRW2.format(totalInv);
+  sumEval.textContent=KRW2.format(totalEval);
+  sumPnl.textContent=KRW2.format(totalPnl);
+  sumPnl.className="";
+  let rateText="-",rateClass="";
+  if(totalInv>0){
+    const rate=(totalPnl/totalInv)*100;
+    if(Number.isFinite(rate)){
+      const sign=rate>0?"+":rate<0?"-":"";
+      rateText=`${sign}${Math.abs(rate).toFixed(2)}%`;
+      if(rate>0)rateClass="pnl-up";
+      else if(rate<0)rateClass="pnl-dn";
+      else rateClass="pnl-zero";
+    }
+  }
+  sumRate.textContent=rateText;
+  sumRate.className=rateClass;
+  if(totalPnl>0)sumPnl.classList.add("pnl-up");
+  else if(totalPnl<0)sumPnl.classList.add("pnl-dn");
+  else sumPnl.classList.add("pnl-zero");
+}
+function renderHoldings(arr){
+  const list=Array.isArray(arr)?arr:[];
+  const hasOwned=list.some(x=>{
+    const qty=Number(x?.qty??x?.units??0);
+    return Number.isFinite(qty)&&qty>0;
+  });
+  holdBox.innerHTML="";
+  holdBox.classList.remove("has-items");
+  if(!hasOwned){
+    holdBox.classList.add("hidden");
+    if(balBox)balBox.classList.add("no-border");
+    renderTotals([]);
+    if(chartsWrap)chartsWrap.classList.add("hidden");
+    return;
+  }
+  if(balBox)balBox.classList.remove("no-border");
+  holdBox.classList.remove("hidden");
+  holdBox.classList.add("has-items");
+  if(chartsWrap)chartsWrap.classList.remove("hidden");
+  list.forEach(x=>{
+    const sym=String(x.symbol||"");
+    const nm=String(x.name||sym);
+    const qty=Number(x.qty??x.units??0);
+    const value=Number(x.valueKrw??x.value_krw??x.marketValueKrw??x.market_value_krw??0)||0;
+    const avg=Number(
+      x.avgPricePerUnitKrw??x.avg_price_per_unit_krw??
+      x.avgBuyPriceKrw??x.avg_buy_price_krw??
+      (qty?value/qty:0)
+    )||0;
+    const invest=Number(x.investKrw??x.invest_krw??(qty&&avg?qty*avg:0))||0;
+    const pnl=Number(x.pnlKrw??x.pnl_krw??(value-invest))||0;
+    const avail=Number(x.availableUnits??x.available_units??qty);
+    let pnlClass="pnl-zero";
+    if(pnl>0)pnlClass="pnl-up";
+    else if(pnl<0)pnlClass="pnl-dn";
+    const pnlText=Number.isFinite(pnl)
+      ?`${pnl>0?"+":pnl<0?"-":""}${KRW2.format(Math.abs(pnl))}`
+      :"-";
+    let rateText="-";
+    if(invest>0&&Number.isFinite(pnl)){
+      const rate=(pnl/invest)*100;
+      if(Number.isFinite(rate)){
+        const sign=rate>0?"+":rate<0?"-":"";
+        rateText=`${sign}${Math.abs(rate).toFixed(2)}%`;
+      }
+    }
+    const row=document.createElement("div");
+    row.className="hold";
+    row.innerHTML=
+      `<div class="balances"><span>보유자산:<b>${nm}</b></span><span>수익률:<b class="${pnlClass}">${rateText}</b></span></div>`+
+      `<div class="balances"><span>체결액:<b>${invest>0?KRW2.format(invest):"-"}</b></span><span>평가손익:<b class="${pnlClass}">${pnlText}</b></span></div>`+
+      `<div class="balances"><span>평가금액:<b>${value>0?KRW2.format(value):"-"}</b></span><span>평균단가:<b>${avg>0?KRW2.format(avg):"-"}</b></span></div>`+
+      `<div class="balances"><span>주문가능:<b>${Number.isFinite(avail)?avail.toLocaleString("ko-KR"):"-"}</b></span><span>보유수량:<b>${Number.isFinite(qty)?qty.toLocaleString("ko-KR"):"-"}</b></span></div>`;
+    holdBox.appendChild(row);
+  });
+  renderTotals(list);
+}
+function barColors(d){
+  const o=[];
+  for(let i=0;i<d.length;i++){
+    if(i===0)o.push(EQ);
+    else{
+      const x=d[i]-d[i-1];
+      o.push(Math.abs(x)<=1e-6?EQ:x>0?UP:DN);
+    }
+  }
+  return o;
+}
+function extractYahooSeries(raw){
+  let values=[],labels=[];
+  if(Array.isArray(raw?.candles)){
+    values=raw.candles.map(c=>Number(c.close??c.c)).filter(v=>Number.isFinite(v));
+    labels=raw.candles.map(c=>c.time??c.t??c.timestamp).slice(-values.length);
+  }else{
+    const res=raw?.chart?.result?.[0]||{};
+    const ts=res.timestamp||[];
+    const close=res?.indicators?.quote?.[0]?.close||[];
+    values=close.map(x=>Number(x)).filter(n=>Number.isFinite(n));
+    labels=ts.slice(-values.length);
+  }
+  return{values,labels};
+}
+async function fetchYahoo(sym,view){
+  const tf=TF[view]||TF.day;
+  const url=`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=${tf.range}&interval=${tf.interval}&region=US&lang=en-US`;
+  const j=await getJSON(`/v1/proxy/yahoo?url=${encodeURIComponent(url)}`);
+  if(!j?.ok)throw new Error("시세를 가져오지 못했어요...");
+  return j.data;
+}
+const labelForType=v=>(
+  v==="m1"?"분봉(1분)":
+  v==="h1"?"시간봉(1시간)":
+  v==="day"?"일봉(1일)":
+  v==="mon"?"월봉(1개월)":
+  "연봉(1년)"
+);
+const deltaLabel=v=>(
+  v==="m1"?"1분 전 대비":
+  v==="h1"?"1시간 전 대비":
+  v==="day"?"1일 전 대비":
+  v==="mon"?"1개월 전 대비":
+  "1년 전 대비"
+);
+const resetTypeLabels=()=>{
+  typeSel.querySelectorAll("option").forEach(o=>{o.textContent=labelForType(o.value);});
+  typeSel.style.color="#fff";
+};
+let chart=null;
+function drawChart(values,rawLabels){
+  const data=values.slice();
+  if(data.length<2)throw new Error();
+  const labels=(rawLabels||[]).map(t=>{
+    const d=new Date((t||0)*1000);
+    if(!isFinite(d))return"";
+    const mm=String(d.getMonth()+1).padStart(2,"0");
+    const dd=String(d.getDate()).padStart(2,"0");
+    return`${mm}/${dd}`;
+  }).slice(-data.length);
+  const lo=Math.min(...data);
+  const hi=Math.max(...data);
+  const pad=Math.max(1,hi-lo)*0.03;
+  const colors=barColors(data);
+  const cfg={
+    type:"bar",
+    data:{
+      labels,
+      datasets:[{data,backgroundColor:colors,borderColor:colors,borderWidth:0}]
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      animation:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{grid:{display:false},ticks:{color:"#aaa",maxTicksLimit:6}},
+        y:{grid:{color:"#333"},ticks:{color:"#aaa"},min:lo-pad,max:hi+pad}
+      }
+    }
+  };
+  if(!chart){
+    chart=new Chart(cv.getContext("2d"),cfg);
+  }else{
+    chart.data.labels=labels;
+    chart.data.datasets[0].data=data;
+    chart.data.datasets[0].backgroundColor=colors;
+    chart.data.datasets[0].borderColor=colors;
+    chart.options.scales.y.min=lo-pad;
+    chart.options.scales.y.max=hi+pad;
+    chart.update();
+  }
+}
+let assets=[];
+const FALLBACK_INDEXES=[
+  {symbol:"SPX",yahoo:"^GSPC",name:"S&P500",kind:"index"},
+  {symbol:"NDX",yahoo:"^NDX",name:"나스닥100",kind:"index"},
+  {symbol:"DJI",yahoo:"^DJI",name:"다우존스",kind:"index"},
+  {symbol:"RUT",yahoo:"^RUT",name:"러셀2000",kind:"index"},
+  {symbol:"FTSE",yahoo:"^FTSE",name:"FTSE100",kind:"index"},
+  {symbol:"DAX",yahoo:"^GDAXI",name:"DAX",kind:"index"},
+  {symbol:"NIKKEI",yahoo:"^N225",name:"니케이225",kind:"index"},
+  {symbol:"HSI",yahoo:"^HSI",name:"항셍지수",kind:"index"},
+  {symbol:"KOSPI",yahoo:"^KS11",name:"코스피",kind:"index"},
+  {symbol:"KOSDAQ",yahoo:"^KQ11",name:"코스닥",kind:"index"}
+];
+const FALLBACK_INDICATORS=[
+  {symbol:"GOLD",yahoo:"GC=F",name:"금(선물)",kind:"indicator"},
+  {symbol:"SILVER",yahoo:"SI=F",name:"은(선물)",kind:"indicator"},
+  {symbol:"COPPER",yahoo:"HG=F",name:"구리(선물)",kind:"indicator"},
+  {symbol:"NGAS",yahoo:"NG=F",name:"천연가스(선물)",kind:"indicator"},
+  {symbol:"OILWTI",yahoo:"CL=F",name:"WTI(선물)",kind:"indicator"},
+  {symbol:"BRENT",yahoo:"BZ=F",name:"브렌트유(선물)",kind:"indicator"},
+  {symbol:"DXY",yahoo:"DX-Y.NYB",name:"달러인덱스",kind:"indicator"},
+  {symbol:"US10Y",yahoo:"^TNX",name:"미국10년물",kind:"indicator"},
+  {symbol:"US2Y",yahoo:"^IRX",name:"미국2년물",kind:"indicator"},
+  {symbol:"VIX",yahoo:"^VIX",name:"VIX",kind:"indicator"}
+];
+const kindOf=a=>String(a?.kind||a?.type||a?.group||"").toLowerCase();
+const isIndex=a=>{const k=kindOf(a);return k==="index"||k.includes("index")||k.includes("idx")||k.includes("지수");};
+const isIndicator=a=>{const k=kindOf(a);return k==="indicator"||k.includes("indicator")||k.includes("ind")||k.includes("지표");};
+function buildAssets(items){
+  const idx=items.filter(isIndex).map(a=>({
+    symbol:a.symbol,
+    name:a.name||a.symbol,
+    yahoo:a.yahooTicker||a.yahoo||a.symbol,
+    kind:"index"
+  }));
+  const ind=items.filter(isIndicator).map(a=>({
+    symbol:a.symbol,
+    name:a.name||a.symbol,
+    yahoo:a.yahooTicker||a.yahoo||a.symbol,
+    kind:"indicator"
+  }));
+  let merged=[...idx,...ind];
+  if(!merged.length)merged=[...FALLBACK_INDEXES,...FALLBACK_INDICATORS];
+  return merged.slice(0,20);
+}
+const formatAssetLabel=a=>`${a.name}(${a.symbol})`;
+const searchFields=a=>[a.name||"",a.symbol||"",a.yahoo||"",a.kind||""].join("|").toLowerCase();
+function findAsset(q){
+  const s=String(q||"").trim().toLowerCase();
+  if(!s)return assets[0];
+  return assets.find(a=>searchFields(a).includes(s))||assets[0];
+}
+function renderAssetList(q){
+  if(!assetList)return;
+  const s=String(q||"").trim().toLowerCase();
+  assetList.innerHTML="";
+  if(!s){assetList.classList.add("hidden");return;}
+  const matches=(assets||[]).filter(a=>searchFields(a).includes(s));
+  if(!matches.length){assetList.classList.add("hidden");return;}
+  matches.slice(0,10).forEach(a=>{
+    const btn=document.createElement("button");
+    btn.type="button";
+    btn.textContent=formatAssetLabel(a);
+    btn.onclick=()=>{
+      setCurrentAsset(a);
+      assetList.classList.add("hidden");
+    };
+    assetList.appendChild(btn);
+  });
+  assetList.classList.remove("hidden");
+}
+let cur=null;
+async function syncUnitPrice(){
+  try{
+    if(!cur)return;
+    const view=typeSel.value;
+    const raw=await fetchYahoo(cur.yahoo,view);
+    const s=extractYahooSeries(raw);
+    const last=s.values.at(-1);
+    const priceStr=Number.isFinite(last)?last.toLocaleString("ko-KR",DEC2):"-";
+    unitBtn.textContent=`${cur.name}·${priceStr}`;
+    return s;
+  }catch{
+    unitBtn.textContent="자산 가격을 가져오지 못했어요...";
+  }
+}
+async function refreshInlinePct(series){
+  try{
+    const s=series||(await syncUnitPrice());
+    const vals=s?.values||[];
+    const l=vals.at(-1);
+    const p=vals.at(-2);
+    const pct=p?((l-p)/p)*100:0;
+    const opt=typeSel.querySelector(`option[value="${typeSel.value}"]`);
+    if(opt)opt.textContent=`${labelForType(typeSel.value)}·${deltaLabel(typeSel.value)} ${(pct>=0?"+":"")+pct.toFixed(2)}%`;
+    typeSel.style.color=Math.abs(pct)<=1e-8?EQ:pct>0?UP:DN;
+  }catch{
+    resetTypeLabels();
+  }
+}
+async function loadChart(){
+  try{
+    if(!cur)return;
+    const raw=await fetchYahoo(cur.yahoo,typeSel.value);
+    const s=extractYahooSeries(raw);
+    if(s.values.length>=2){
+      drawChart(s.values,s.labels);
+      await refreshInlinePct(s);
+    }
+  }catch{}
+}
+function setCurrentAsset(a){
+  cur=a||assets[0];
+  if(assetSearch&&cur)assetSearch.value=formatAssetLabel(cur);
+  resetTypeLabels();
+  syncUnitPrice().then(()=>{
+    loadChart();
+    refreshInlinePct();
+  });
+}
+let timer=null;
+async function auto(){
+  const s=await syncUnitPrice();
+  await loadChart();
+  await refreshInlinePct(s);
+}
+function start(){
+  if(timer)return;
+  auto();
+  timer=setInterval(auto,6e4);
+}
+function stop(){
+  if(timer){
+    clearInterval(timer);
+    timer=null;
+  }
+}
+btnCheck.onclick=async()=>{
+  const id=idEl.value.trim().replace(/^@/,"");
+  const pw=pwEl.value;
+  if(!id){ok("ID를 입력하세요!!");idEl.focus();return;}
+  if(pw.trim().length<6){ok("비밀번호를 정확히 입력하세요!!");pwEl.focus();return;}
+  btnCheck.disabled=true;
+  const stopDots=dots(btnCheck,"내 자산 조회하기 진행 중");
+  try{
+    const s=await postJSON("v1/portfolio/summary",{id,password:pw});
+    showSummary(s?.data||s);
+    if(rankEl){
+      rankEl.textContent="-";
+      rankEl.className="";
+      try{
+        const ranks=await getJSON("v1/users/rankings").catch(()=>null);
+        if(ranks&&ranks.data){
+          const meId=id;
+          const list=Array.isArray(ranks.data.topByProfitRate)?ranks.data.topByProfitRate:[];
+          const total=list.length;
+          const me=list.find(x=>String(x.id)===String(meId));
+          if(me){
+            showRank({data:{rank:Number(me.rank),totalUsers:total,return_rate_pct:Number(me.profitRate)}});
+          }
+        }
+      }catch{}
+    }
+    const h=await postJSON("v1/assets/holdings",{id,password:pw,includePrices:true}).catch(()=>({}));
+    renderHoldings(h?.data?.items||h?.items||[]);
+    ok("자산 조회가 완료되었어요!!");
+  }catch(e){
+    err(e?.message||"요청 처리 중 오류가 발생했어요...");
+  }finally{
+    stopDots();
+    btnCheck.disabled=false;
+  }
+};
+typeSel.onchange=()=>{
+  resetTypeLabels();
+  loadChart();
+  refreshInlinePct();
+};
+if(assetSearch){
+  assetSearch.addEventListener("input",()=>{
+    const v=assetSearch.value;
+    renderAssetList(v);
+    clearTimeout(assetSearch._t);
+    assetSearch._t=setTimeout(()=>{
+      const next=findAsset(v);
+      if(next&&next!==cur)setCurrentAsset(next);
+    },200);
+  });
+  assetSearch.addEventListener("blur",()=>{
+    setTimeout(()=>{if(assetList)assetList.classList.add("hidden");},200);
+  });
+}
+(async()=>{
+  const j=await getJSON("v1/assets").catch(()=>null);
+  const items=j?.data?.items||j?.items||[];
+  assets=buildAssets(items);
+  cur=assets[0];
+  if(cur&&assetSearch)assetSearch.value=formatAssetLabel(cur);
+  resetTypeLabels();
+  start();
+})();
+document.addEventListener("visibilitychange",()=>{document.hidden?stop():start();});
+addEventListener("focus",start);
+addEventListener("blur",stop);
+})();
+</script>

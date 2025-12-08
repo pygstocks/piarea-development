@@ -1,0 +1,13 @@
+name = "piarea-development"
+main = "src/server.ts"
+compatibility_date = "2025-12-01"
+compatibility_flags = ["nodejs_compat"]
+[triggers]
+crons = ["* * * * *"]
+[vars]
+FIXED_END_KST = "2025-12-31T00:00:00+09:00"
+ALLOWED_ORIGINS = "http://localhost:3000,https://piarea-development.pygstocks.workers.dev,https://pygstocks.com,https://pygstocks.imweb.me"
+CSRF_DEV_DISABLE = "true"
+[[kv_namespaces]]
+binding = "TRADE_KV"
+id = "b89152b821924b60a1ed535f17543b13"

@@ -1,0 +1,525 @@
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="color-scheme" content="dark"/>
+<meta name="piarea-development" content="https://piarea-development.pygstocks.workers.dev"/>
+<title>PIAREA-Stock(US)</title>
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans:wght@500;700&display=swap");
+:root{--bg:#000;--fg:#fff;--line:#333;--gap:8px;--radius:8px;--muted:#aaa;--up:#ff6b6b;--dn:#6b6bff}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;width:100%;min-height:100svh;background:var(--bg);color:var(--fg);font-family:"Noto Sans",system-ui,sans-serif;color-scheme:dark;overflow-x:hidden}
+.fullbleed{width:100vw;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw)}
+.page{max-width:450px;margin:0 auto;padding:0 16px}
+.wrap,.stack{display:flex;flex-direction:column;gap:var(--gap)}
+.hidden{display:none!important}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0,0,0,0)}
+label{display:block;margin:0 0 4px;font-size:14px;font-weight:700}
+.btn,.input,select{width:100%;padding:16px 12px;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);appearance:none;outline:none;transition:box-shadow .12s,background-color .12s,color .12s}
+.btn{font-weight:700;cursor:pointer;text-align:center}
+.input:focus,select:focus,.btn:focus{box-shadow:0 0 0 1px var(--fg)}
+.btn:active{background:#fff;color:#000;border-color:var(--line)}
+.chartbox{width:100%;height:260px;border:1px solid var(--line);border-radius:var(--radius);padding:8px}
+.chartbox>canvas{width:100%!important;height:100%!important;display:block}
+.balances{display:flex;justify-content:space-between;align-items:center;margin-top:4px;font-size:14px;color:var(--muted)}
+.balances b{color:var(--fg);font-weight:700}
+.suggest{margin-top:4px;border:1px solid var(--line);border-radius:var(--radius);max-height:180px;overflow:auto;font-size:14px;background:var(--bg)}
+.suggest button{width:100%;padding:16px 12px;text-align:left;background:none;border:0;color:var(--fg);cursor:pointer;border-bottom:1px solid #222;font-family:inherit;font-size:16px}
+.suggest button:last-child{border-bottom:none}
+.suggest button:hover,.suggest button:focus{background:#333}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+<div class="fullbleed">
+  <div class="page">
+    <main class="wrap">
+      <section class="stack">
+        <button id="unitBtn" class="btn" type="button">-</button>
+        <input id="assetSearch" class="input" autocomplete="off" autocapitalize="none" placeholder="자산 이름 또는 심볼을 입력하세요!!"/>
+        <div id="assetList" class="suggest hidden"></div>
+        <select id="typeSel" class="input">
+          <option value="m1">분봉(1분)</option>
+          <option value="h1">시간봉(1시간)</option>
+          <option value="day" selected>일봉(1일)</option>
+          <option value="mon">월봉(1개월)</option>
+          <option value="year">연봉(1년)</option>
+        </select>
+        <section class="chartbox">
+          <canvas id="cv"></canvas>
+        </section>
+        <select id="sideSel" class="input">
+          <option value="buy" selected>매수</option>
+          <option value="sell">매도</option>
+        </select>
+        <form id="tradeForm" class="stack" autocomplete="off" novalidate>
+          <input id="id" class="input" autocomplete="username" autocapitalize="none" placeholder="ID를 입력하세요!!"/>
+          <input id="password" class="input" type="password" minlength="6" maxlength="64" autocomplete="current-password" placeholder="비밀번호를 입력하세요!!"/>
+          <input id="qty" class="input" inputmode="numeric" pattern="\d*" placeholder="매수/매도할 수량을 입력하세요!!"/>
+          <div class="balances">
+            <span>현금(KRW): <b id="cashVal">-</b></span>
+            <span><span id="estLabel">체결액:</span> <b id="est">-</b></span>
+          </div>
+          <button type="submit" id="submitBtn" class="btn">매수하기</button>
+          <span id="live" class="sr-only" aria-live="polite"></span>
+        </form>
+      </section>
+    </main>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
+<script>
+(()=>{"use strict";
+const API=(document.querySelector('meta[name="piarea-development"]')?.content||"").trim()||"";
+const ok=m=>{
+  const s=String(m||"요청이 완료됐어요!!");
+  alert(s.endsWith("!!")?s:s+"!!");
+};
+const err=m=>{
+  const s=String(m||"오류가 발생했어요...");
+  alert(s.endsWith("...")?s:s+"...");
+};
+const idem=()=>crypto?.randomUUID?.()||(Math.random().toString(36).slice(2)+Date.now());
+async function fjson(u,o){
+  const r=await fetch(u,o).catch(()=>null);
+  const tx=await r?.text().catch(()=>"\u200b");
+  let j={};
+  try{j=tx?JSON.parse(tx):{}}catch{}
+  if(!r?.ok||j?.ok===false){
+    const m=j?.message||j?.msg||j?.detail||j?.error||j?.reason||"요청 처리에 실패했어요...";
+    const e=new Error(String(m).replace(/\s*\(HTTP.*\)\s*$/,"").replace(/(?:\.\.\.)?$/,"..."));
+    e.status=r?.status;
+    e.response=j;
+    throw e;
+  }
+  return j;
+}
+async function getJSON(p){
+  const u=p.startsWith("http")?p:`${API}/${String(p||"").replace(/^\/+/,"")}`;
+  return fjson(u,{credentials:"include",headers:{Accept:"application/json"}});
+}
+async function postJSON(p,b){
+  const u=p.startsWith("http")?p:`${API}/${String(p||"").replace(/^\/+/,"")}`;
+  return fjson(u,{
+    method:"POST",
+    credentials:"include",
+    headers:{
+      "Content-Type":"application/json",
+      Accept:"application/json",
+      "Idempotency-Key":idem()
+    },
+    body:JSON.stringify(b||{})
+  });
+}
+const $=id=>document.getElementById(id);
+const unitBtn=$("unitBtn");
+const assetSearch=$("assetSearch");
+const assetList=$("assetList");
+const typeSel=$("typeSel");
+const cv=$("cv");
+const sideSel=$("sideSel");
+const form=$("tradeForm");
+const idEl=$("id");
+const pwEl=$("password");
+const qtyEl=$("qty");
+const cashVal=$("cashVal");
+const est=$("est");
+const submitBtn=$("submitBtn");
+const ASSETS=[
+  {ticker:"NVDA",symbol:"NVDA",name:"엔비디아"},
+  {ticker:"AAPL",symbol:"AAPL",name:"애플"},
+  {ticker:"GOOGL",symbol:"GOOGL",name:"알파벳 A"},
+  {ticker:"MSFT",symbol:"MSFT",name:"마이크로소프트"},
+  {ticker:"AMZN",symbol:"AMZN",name:"아마존닷컴"},
+  {ticker:"AVGO",symbol:"AVGO",name:"브로드컴"},
+  {ticker:"META",symbol:"META",name:"메타 플랫폼스(페이스북)"},
+  {ticker:"TSLA",symbol:"TSLA",name:"테슬라"},
+  {ticker:"BRK-B",symbol:"BRKB",name:"버크셔 해서웨이 B"},
+  {ticker:"LLY",symbol:"LLY",name:"일라이 릴리"},
+  {ticker:"WMT",symbol:"WMT",name:"월마트"},
+  {ticker:"JPM",symbol:"JPM",name:"제이피모간 체이스"},
+  {ticker:"V",symbol:"V",name:"비자"},
+  {ticker:"ORCL",symbol:"ORCL",name:"오라클"},
+  {ticker:"JNJ",symbol:"JNJ",name:"존슨 앤드 존슨"},
+  {ticker:"MA",symbol:"MA",name:"마스타카드"},
+  {ticker:"XOM",symbol:"XOM",name:"엑슨 모빌"},
+  {ticker:"NFLX",symbol:"NFLX",name:"넷플릭스"},
+  {ticker:"COST",symbol:"COST",name:"코스트코 홀세일"},
+  {ticker:"ABBV",symbol:"ABBV",name:"애브비"},
+  {ticker:"PLTR",symbol:"PLTR",name:"팔란티어 테크"},
+  {ticker:"BAC",symbol:"BAC",name:"뱅크오브아메리카"},
+  {ticker:"HD",symbol:"HD",name:"홈 디포"},
+  {ticker:"AMD",symbol:"AMD",name:"AMD"},
+  {ticker:"PG",symbol:"PG",name:"프록터 앤드 캠블"},
+  {ticker:"KO",symbol:"KO",name:"코카콜라"},
+  {ticker:"GE",symbol:"GE",name:"GE에어로스페이스"},
+  {ticker:"CVX",symbol:"CVX",name:"셰브론"},
+  {ticker:"CSCO",symbol:"CSCO",name:"시스코 시스템즈"},
+  {ticker:"UNH",symbol:"UNH",name:"유나이티드헬스 그룹"}
+];
+const DEC2={minimumFractionDigits:2,maximumFractionDigits:2};
+const UP="#ff6b6b";
+const DN="#6b6bff";
+const EQ="#333";
+const TF={
+  m1:a=>`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(a.ticker)}?range=1d&interval=1m&region=US&lang=en-US`,
+  h1:a=>`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(a.ticker)}?range=5d&interval=15m&region=US&lang=en-US`,
+  day:a=>`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(a.ticker)}?range=1mo&interval=1d&region=US&lang=en-US`,
+  mon:a=>`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(a.ticker)}?range=6mo&interval=1wk&region=US&lang=en-US`,
+  year:a=>`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(a.ticker)}?range=5y&interval=1mo&region=US&lang=en-US`
+};
+const labelForType=v=>(
+  v==="m1"?"분봉(1분)":
+  v==="h1"?"시간봉(1시간)":
+  v==="day"?"일봉(1일)":
+  v==="mon"?"월봉(1개월)":
+  "연봉(1년)"
+);
+const deltaLabel=v=>(
+  v==="m1"?"1분 전 대비":
+  v==="h1"?"1시간 전 대비":
+  v==="day"?"1일 전 대비":
+  v==="mon"?"1개월 전 대비":
+  "1년 전 대비"
+);
+const resetTypeLabels=()=>{
+  typeSel.querySelectorAll("option").forEach(o=>{
+    o.textContent=labelForType(o.value);
+  });
+  typeSel.style.color="#fff";
+};
+let cur=ASSETS[0];
+let unitPriceKRWPerUnit=null;
+let currentUnit=1;
+let chart=null;
+let timer=null;
+const formatAssetLabel=a=>`${a.name}(${a.ticker})`;
+const findAsset=q=>{
+  const s=String(q||"").trim().toLowerCase();
+  if(!s)return ASSETS[0];
+  return ASSETS.find(a=>{
+    const n=(a.name||"").toLowerCase();
+    const sym=(a.symbol||"").toLowerCase();
+    const t=(a.ticker||"").toLowerCase();
+    return n.includes(s)||sym.includes(s)||t.includes(s);
+  })||ASSETS[0];
+};
+function renderAssetList(q){
+  if(!assetList)return;
+  const s=String(q||"").trim().toLowerCase();
+  assetList.innerHTML="";
+  if(!s){assetList.classList.add("hidden");return;}
+  const matches=ASSETS.filter(a=>{
+    const n=(a.name||"").toLowerCase();
+    const sym=(a.symbol||"").toLowerCase();
+    const t=(a.ticker||"").toLowerCase();
+    return n.includes(s)||sym.includes(s)||t.includes(s);
+  });
+  if(!matches.length){assetList.classList.add("hidden");return;}
+  matches.slice(0,10).forEach(a=>{
+    const btn=document.createElement("button");
+    btn.type="button";
+    btn.textContent=formatAssetLabel(a);
+    btn.onclick=()=>{
+      setCurrentAsset(a);
+      assetList.classList.add("hidden");
+    };
+    assetList.appendChild(btn);
+  });
+  assetList.classList.remove("hidden");
+}
+function setCurrentAsset(a){
+  cur=a||ASSETS[0];
+  assetSearch.value=formatAssetLabel(cur);
+  resetTypeLabels();
+  syncUnitPrice().then(()=>{
+    loadChart();
+    refreshInlinePct();
+    updateLabels();
+  });
+}
+function extractYahooSeries(raw){
+  let values=[];
+  let labels=[];
+  if(Array.isArray(raw?.candles)){
+    values=raw.candles.map(c=>Number(c.close??c.c)).filter(v=>Number.isFinite(v));
+    labels=raw.candles.map(c=>c.time??c.t??c.timestamp).slice(-values.length);
+  }else{
+    const res=raw?.chart?.result?.[0]||{};
+    const ts=res.timestamp||[];
+    const quote=res?.indicators?.quote?.[0]||{};
+    const close=quote.close||[];
+    values=close.map(x=>Number(x)).filter(n=>Number.isFinite(n));
+    labels=ts.slice(-values.length);
+  }
+  return {values,labels};
+}
+function extractYahooOhlc(raw){
+  const res=raw?.chart?.result?.[0]||{};
+  const ts=res.timestamp||[];
+  const quote=res?.indicators?.quote?.[0]||{};
+  const opens=quote.open||[];
+  const highs=quote.high||[];
+  const lows=quote.low||[];
+  const closes=quote.close||[];
+  const len=Math.min(ts.length,opens.length,highs.length,lows.length,closes.length);
+  const labels=[];
+  const candles=[];
+  for(let i=0;i<len;i++){
+    const o=Number(opens[i]);
+    const h=Number(highs[i]);
+    const l=Number(lows[i]);
+    const c=Number(closes[i]);
+    if(!Number.isFinite(o)||!Number.isFinite(h)||!Number.isFinite(l)||!Number.isFinite(c))continue;
+    labels.push(ts[i]);
+    candles.push({o,h,l,c});
+  }
+  return {labels,candles};
+}
+async function proxyYahoo(url){
+  const j=await getJSON(`/v1/proxy/yahoo?url=${encodeURIComponent(url)}`);
+  if(!j?.ok)throw new Error("시세를 가져오지 못했어요...");
+  return j.data;
+}
+async function refreshInlinePct(){
+  try{
+    const raw=await proxyYahoo(TF[typeSel.value](cur));
+    const s=extractYahooSeries(raw);
+    const vals=s.values;
+    const l=vals.at(-1);
+    const p=vals.at(-2);
+    const pct=p?((l-p)/p)*100:0;
+    const opt=typeSel.querySelector(`option[value="${typeSel.value}"]`);
+    if(opt){
+      opt.textContent=`${labelForType(typeSel.value)}·${deltaLabel(typeSel.value)} ${(pct>=0?"+":"")+pct.toFixed(2)}%`;
+    }
+    typeSel.style.color=Math.abs(pct)<=1e-8?EQ:pct>0?UP:DN;
+  }catch{
+    resetTypeLabels();
+  }
+}
+async function syncUnitPrice(){
+  try{
+    let j=await getJSON(`/v1/market/price/unit?symbol=${encodeURIComponent(cur.symbol)}`).catch(()=>null);
+    if(!j?.ok){
+      j=await getJSON(`/v1/market/price/unit?symbol=${encodeURIComponent(cur.symbol)}&allowStale=1`).catch(()=>null);
+    }
+    const d=j?.data||j;
+    currentUnit=Number(d?.unit||1)||1;
+    const per=Number(d?.perUnitKRW||0);
+    unitPriceKRWPerUnit=per>0?per:null;
+    const priceStr=unitPriceKRWPerUnit!=null
+      ?unitPriceKRWPerUnit.toLocaleString("ko-KR",DEC2)
+      :"-";
+    unitBtn.textContent=`${cur.name}·${priceStr}`;
+    updateEst();
+  }catch{
+    unitBtn.textContent="자산 가격을 가져오지 못했어요...";
+    unitPriceKRWPerUnit=null;
+  }
+}
+function parseIntField(el){
+  const v=String(el.value||"").replace(/[^\d]/g,"");
+  el.value=v.replace(/^0+(\d)/,"$1");
+  return v?parseInt(v,10):0;
+}
+function updateEst(){
+  const n=parseIntField(qtyEl);
+  est.textContent=!unitPriceKRWPerUnit||n<=0?"-":(n*unitPriceKRWPerUnit).toLocaleString("ko-KR",DEC2)+" 원";
+}
+async function loadChart(){
+  try{
+    const raw=await proxyYahoo(TF[typeSel.value](cur));
+    const parsed=extractYahooOhlc(raw);
+    const base=parsed.candles;
+    if(base.length<2)throw new Error();
+    const data=base.map(c=>({
+      o:c.o*currentUnit,
+      h:c.h*currentUnit,
+      l:c.l*currentUnit,
+      c:c.c*currentUnit
+    }));
+    const labels=parsed.labels.map(t=>{
+      const d=new Date((t||0)*1000);
+      const mm=String(d.getMonth()+1).padStart(2,"0");
+      const dd=String(d.getDate()).padStart(2,"0");
+      return `${mm}/${dd}`;
+    });
+    const lows=data.map(d=>d.l);
+    const highs=data.map(d=>d.h);
+    const lo=Math.min(...lows);
+    const hi=Math.max(...highs);
+    const pad=Math.max(1,hi-lo)*0.03;
+    const cfg={
+      type:"candlestick",
+      data:{
+        labels,
+        datasets:[{
+          data,
+          borderWidth:1,
+          borderColor:EQ,
+          increasingColor:UP,
+          increasingBorderColor:UP,
+          decreasingColor:DN,
+          decreasingBorderColor:DN,
+          unchangedColor:EQ,
+          parsing:false
+        }]
+      },
+      options:{
+        responsive:true,
+        maintainAspectRatio:false,
+        animation:false,
+        plugins:{
+          legend:{display:false},
+          tooltip:{callbacks:{
+            label(ctx){
+              const v=ctx.raw||{};
+              const o=Number(v.o||0);
+              const h=Number(v.h||0);
+              const l=Number(v.l||0);
+              const c=Number(v.c||0);
+              return `O ${o.toLocaleString("ko-KR",DEC2)} H ${h.toLocaleString("ko-KR",DEC2)} L ${l.toLocaleString("ko-KR",DEC2)} C ${c.toLocaleString("ko-KR",DEC2)}`;
+            }
+          }}
+        },
+        scales:{
+          x:{grid:{display:false},ticks:{color:"#aaa",maxTicksLimit:6}},
+          y:{
+            grid:{color:"#333"},
+            ticks:{color:"#aaa",callback:v=>Number(v).toLocaleString("ko-KR",DEC2)},
+            min:lo-pad,
+            max:hi+pad
+          }
+        }
+      }
+    };
+    if(!chart){
+      chart=new Chart(cv.getContext("2d"),cfg);
+    }else{
+      chart.data.labels=labels;
+      chart.data.datasets[0].data=data;
+      chart.options.scales.y.min=lo-pad;
+      chart.options.scales.y.max=hi+pad;
+      chart.update();
+    }
+  }catch{}
+}
+async function loadCash(){
+  try{
+    const id=idEl.value.trim().replace(/^@/,"");
+    const pw=pwEl.value;
+    if(!id||pw.trim().length<6)return;
+    const d=await postJSON("v1/portfolio/summary",{id,password:pw}).catch(()=>({}));
+    if(d?.ok){
+      const v=Number((d.data||{}).cash_pia||0);
+      cashVal.textContent=v.toLocaleString("ko-KR",DEC2)+" 원";
+    }else{
+      cashVal.textContent="-";
+    }
+  }catch{
+    cashVal.textContent="-";
+  }
+}
+async function placeOrder({id,password,assetSymbol,side,unitCount}){
+  const r=await postJSON("v1/orders",{
+    id,
+    password,
+    symbol:String(assetSymbol||"").toUpperCase(),
+    side,
+    type:"market",
+    qty:unitCount
+  });
+  if(r?.ok)return r.data;
+  throw new Error(r?.message||"주문 처리에 실패했어요...");
+}
+function updateLabels(){
+  const buying=sideSel.value==="buy";
+  submitBtn.textContent=buying?"매수하기":"매도하기";
+  qtyEl.placeholder=buying?"매수할 수량을 입력하세요!!":"매도할 수량을 입력하세요!!";
+  updateEst();
+}
+async function auto(){
+  await syncUnitPrice();
+  await loadChart();
+  await refreshInlinePct();
+}
+function start(){
+  if(timer)return;
+  auto();
+  timer=setInterval(auto,6e4);
+}
+function stop(){
+  if(timer){
+    clearInterval(timer);
+    timer=null;
+  }
+}
+assetSearch.addEventListener("input",()=>{
+  const v=assetSearch.value;
+  renderAssetList(v);
+  clearTimeout(assetSearch._t);
+  assetSearch._t=setTimeout(()=>{
+    const next=findAsset(v);
+    if(next!==cur)setCurrentAsset(next);
+  },200);
+});
+assetSearch.addEventListener("blur",()=>{
+  setTimeout(()=>{
+    if(assetList)assetList.classList.add("hidden");
+  },200);
+});
+typeSel.onchange=()=>{
+  resetTypeLabels();
+  loadChart();
+  refreshInlinePct();
+};
+qtyEl.oninput=updateEst;
+[idEl,pwEl].forEach(el=>{
+  ["input","change"].forEach(ev=>{
+    el.addEventListener(ev,()=>{
+      clearTimeout(el._t);
+      el._t=setTimeout(loadCash,300);
+    });
+  });
+});
+sideSel.onchange=updateLabels;
+form.onsubmit=async e=>{
+  e.preventDefault();
+  const id=idEl.value.trim().replace(/^@/,"");
+  const password=pwEl.value;
+  const unitCount=parseIntField(qtyEl);
+  const side=sideSel.value;
+  if(!id){err("ID를 입력하세요...");idEl.focus();return;}
+  if(password.trim().length<6){err("비밀번호를 정확히 입력하세요...");pwEl.focus();return;}
+  if(!Number.isInteger(unitCount)||unitCount<=0){err("정수 개수를 입력하세요...");qtyEl.focus();return;}
+  submitBtn.disabled=true;
+  let p=0;
+  const iv=setInterval(()=>{
+    p=(p+1)%4;
+    submitBtn.textContent=(side==="buy"?"매수하기 진행 중":"매도하기 진행 중")+["",".","..","..."][p];
+  },400);
+  try{
+    await placeOrder({id,password,assetSymbol:cur.symbol,side,unitCount});
+    ok(`${side==="buy"?"매수":"매도"}가 완료되었어요!!`);
+    form.reset();
+    updateLabels();
+    syncUnitPrice();
+    loadCash();
+  }catch(e2){
+    err(e2?.message||"주문 처리에 실패했어요...");
+  }finally{
+    clearInterval(iv);
+    submitBtn.textContent=side==="buy"?"매수하기":"매도하기";
+    submitBtn.disabled=false;
+  }
+};
+document.addEventListener("visibilitychange",()=>{
+  document.hidden?stop():start();
+});
+addEventListener("focus",start);
+addEventListener("blur",stop);
+setCurrentAsset(cur);
+start();
+updateLabels();
+refreshInlinePct();
+})();
+</script>

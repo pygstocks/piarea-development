@@ -1,0 +1,125 @@
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="color-scheme" content="dark"/>
+<meta name="piarea-development" content="https://piarea-development.pygstocks.workers.dev"/>
+<title>PIAREA-SignUp</title>
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans:wght@500;700&display=swap");
+:root{--bg:#000;--fg:#fff;--line:#333;--gap:8px;--radius:8px;--muted:#aaa;--up:#ff6b6b;--dn:#6b6bff;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;width:100%;min-height:100svh;background:var(--bg);color:var(--fg);font-family:"Noto Sans",system-ui,sans-serif;color-scheme:dark;overflow-x:hidden;}
+.fullbleed{width:100vw;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw);}
+.page{max-width:450px;margin:0 auto;padding:0 16px;}
+.wrap,.stack{display:flex;flex-direction:column;gap:var(--gap);}
+.twins{display:flex;gap:var(--gap);}
+.twins .btn{flex:1;}
+.hidden{display:none!important;}
+label{display:block;margin:0 0 4px;font-size:14px;font-weight:700;}
+.btn,.input,select{width:100%;padding:16px 12px;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);appearance:none;outline:none;transition:box-shadow .12s,background-color .12s,color .12s;}
+.btn{font-weight:700;cursor:pointer;text-align:center;}
+.input:focus,select:focus,.btn:focus{box-shadow:0 0 0 1px var(--fg);}
+.btn:active{background:#fff;color:#000;border-color:var(--line);}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
+</style>
+<div class="fullbleed">
+  <div class="page">
+    <main class="wrap">
+      <section class="stack">
+        <h1 class="hidden">PIAREA 가입하기</h1>
+        <input id="id" class="input" placeholder="ID를 입력하세요!!" autocapitalize="none" autocomplete="username"/>
+        <input id="pw" class="input" type="password" minlength="6" maxlength="64" autocomplete="new-password" placeholder="특수문자 1개 이상 포함 6자 이상을 입력하세요!!"/>
+        <input id="pw2" class="input" type="password" minlength="6" maxlength="64" autocomplete="new-password" placeholder="비밀번호를 다시 입력하세요!!"/>
+        <select id="agree" class="input">
+          <option value="yes">동의합니다!!</option>
+          <option value="no">동의하지 않습니다...</option>
+        </select>
+        <div class="twins">
+          <a class="btn" href="https://pygstocks.com/?mode=policy" target="_blank" rel="noopener noreferrer">이용약관</a>
+          <a class="btn" href="https://pygstocks.com/?mode=privacy" target="_blank" rel="noopener noreferrer">개인정보 처리방침</a>
+        </div>
+        <button id="btnSignup" class="btn">PIAREA 가입하기</button>
+        <button id="btnHome" class="btn">홈으로 이동하기</button>
+      </section>
+    </main>
+  </div>
+</div>
+<script>
+(()=>{"use strict";
+const API=(document.querySelector('meta[name="piarea-development"]')?.content||"").trim()||"";
+const ok=m=>{const s=String(m||"요청이 완료됐어요!!");alert(s.endsWith("!!")?s:`${s}!!`);};
+const err=m=>{const s=String(m||"오류가 발생했어요...");alert(s.endsWith("...")?s:`${s}...`);};
+const idem=()=>crypto?.randomUUID?.()||(Math.random().toString(36).slice(2)+Date.now());
+async function fjson(u,o){
+  const r=await fetch(u,o).catch(()=>null);
+  const tx=await r?.text().catch(()=>"\u200b");
+  let j={};
+  try{j=tx?JSON.parse(tx):{};}catch{}
+  if(!r?.ok||j?.ok===false){
+    const m=j?.message||j?.msg||j?.detail||j?.error||j?.reason||"요청 처리에 실패했어요...";
+    const e=new Error(String(m).replace(/\s*\(HTTP.*\)\s*$/,"").replace(/(?:\.\.\.)?$/,"..."));
+    e.status=r?.status;
+    e.response=j;
+    throw e;
+  }
+  return j;
+}
+const postJSON=(p,b)=>{
+  const u=p.startsWith("http")?p:`${API}/${String(p||"").replace(/^\/+/,"")}`;
+  return fjson(u,{
+    method:"POST",
+    credentials:"include",
+    headers:{"Content-Type":"application/json",Accept:"application/json","Idempotency-Key":idem()},
+    body:JSON.stringify(b||{})
+  });
+};
+const $=id=>document.getElementById(id);
+const idEl=$("id");
+const pwEl=$("pw");
+const pw2El=$("pw2");
+const agreeEl=$("agree");
+const btnSignup=$("btnSignup");
+const btnHome=$("btnHome");
+const hasSp=s=>/[^A-Za-z0-9]/.test(s||"");
+const dots=(el,base,d=1e3,s=300)=>{
+  let to=null,iv=null,p=0;
+  const orig=el.textContent||"";
+  to=setTimeout(()=>{
+    el.textContent=base;
+    iv=setInterval(()=>{
+      p=(p+1)%4;
+      el.textContent=base+["",".","..","..."][p];
+    },s);
+  },d);
+  return()=>{
+    clearTimeout(to);
+    clearInterval(iv);
+    el.textContent=orig;
+  };
+};
+btnSignup?.addEventListener("click",async()=>{
+  const id=idEl.value.trim().replace(/^@/,"");
+  const p1=pwEl.value;
+  const p2=pw2El.value;
+  const p1Trim=p1.trim();
+  if(!id){ok("ID를 입력하세요!!");idEl.focus();return;}
+  if(!(p1Trim.length>=6&&hasSp(p1Trim))){ok("특수문자 1개 이상 포함 6자 이상 입력하세요!!");pwEl.focus();return;}
+  if(p1!==p2){err("비밀번호가 일치하지 않아요...");pw2El.focus();return;}
+  const agree=agreeEl?.value||"";
+  if(agree!=="yes"){err("PIAREA 이용약관에 동의해야 가입할 수 있어요...");agreeEl.focus();return;}
+  btnSignup.disabled=true;
+  const stop=dots(btnSignup,"PIAREA 가입하기 진행 중");
+  try{
+    const j=await postJSON("v1/users/signup",{id,password:p1Trim});
+    if(!j?.ok){err("요청 처리 중 오류가 발생했어요...");return;}
+    ok("회원가입이 완료되었어요!!");
+    location.href="https://pygstocks.com/home";
+  }catch(e){
+    err(e?.message||"요청 처리 중 오류가 발생했어요...");
+  }finally{
+    stop();
+    btnSignup.disabled=false;
+  }
+});
+btnHome?.addEventListener("click",()=>{location.href="https://pygstocks.com/home";});
+})();
+</script>
